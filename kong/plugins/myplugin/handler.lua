@@ -101,11 +101,14 @@ function check_remote_auth(plugin_conf)
   
   -- Make request to remote auth server
   local auth_server_url = plugin_conf.remote_auth_server
-  local original_header_value = kong.request.get_header(plugin_conf.request_header_name)
+  local request_header_name = plugin_conf.request_header_name
+  local original_header_value = kong.request.get_header(request_header_name)
+  kong.log.info("Request to auth server: ", auth_server_url,
+                " with header: ", request_header_name, " = ", original_header_value)
   local res, err = httpc:request_uri(auth_server_url, {
     method = "GET",
     headers = {
-      [plugin_conf.request_header_name] = original_header_value
+      [request_header_name] = original_header_value
     }
   })
   
