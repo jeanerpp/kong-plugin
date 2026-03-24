@@ -83,11 +83,13 @@ function plugin:access(plugin_conf)
   kong.log.inspect(plugin_conf)   -- check the logs for a pretty-printed config!
   
   -- Call remote authentication server
-  local auth_ok = check_remote_auth(plugin_conf)
+  local auth_token = check_remote_auth(plugin_conf)
   
-  if not auth_ok then
+  if not auth_token then
     return kong.response.exit(401, "Authentication failed")
   end
+
+  kong.service.request.set_header(plugin_conf.auth_header_name, "Bearer " .. auth_token)
   
 end --]]
 
@@ -95,6 +97,7 @@ end --]]
 function check_remote_auth(plugin_conf)
   local http = require "resty.http"
   local httpc = http.new()
+  local cjson = require "cjson"
   
   -- Set timeout for the request
   httpc:set_timeout(5000)  -- 5 seconds
@@ -114,16 +117,18 @@ function check_remote_auth(plugin_conf)
   
   if not res then
     kong.log.err("Failed to call auth server: ", err)
-    return false
+    return nil
   end
   
   -- Check if auth server responded with 200 OK
   if res.status == 200 then
-    kong.log.info("Authentication successful: ", auth_server_url)
-    return true
+    local body = cjson.decode(res.body)
+    local token = body.token
+    kong.log.info("Authentication successful: ", auth_server_url, " token: ", token)
+    return token
   else
     kong.log.warn("Authentication failed: ", auth_server_url, " status: ", res.status)
-    return false
+    return nil
   end
 end
 

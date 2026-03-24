@@ -25,6 +25,10 @@ local schema = {
           { remote_auth_server = { -- configuration for remote authentication server
               type = "string",
               required = true, }},
+          { auth_header_name = { -- the request head name for JWT auth token to upstream server
+              type = "string",
+              default = "Authorization",
+              required = true, }},
         },
         entity_checks = {
         },
