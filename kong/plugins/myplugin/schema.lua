@@ -26,6 +26,9 @@ local schema = {
               default = 600,
               required = true,
               gt = 0, }}, -- adding a constraint for the value
+          { remote_auth_server = { -- configuration for remote authentication server
+              type = "string",
+              required = true, }},
         },
         entity_checks = {
           -- add some validation rules across fields

@@ -90,7 +90,7 @@ end --]]
 function plugin:header_filter(plugin_conf)
 
   -- your custom code here, for example;
-  kong.response.set_header(plugin_conf.response_header, "this is on the response")
+  kong.response.set_header(plugin_conf.response_header, "this is on my response")
 
 end --]]
 
