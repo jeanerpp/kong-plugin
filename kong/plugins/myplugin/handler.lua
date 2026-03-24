@@ -83,18 +83,16 @@ function plugin:access(plugin_conf)
   kong.log.inspect(plugin_conf)   -- check the logs for a pretty-printed config!
   
   -- Call remote authentication server
-  local auth_ok = check_remote_auth(plugin_conf.remote_auth_server)
+  local auth_ok = check_remote_auth(plugin_conf)
   
   if not auth_ok then
     return kong.response.exit(401, "Authentication failed")
   end
   
-  kong.service.request.set_header(plugin_conf.request_header, "this is on a request")
-
 end --]]
 
 -- Function to check remote authentication
-function check_remote_auth(auth_server_url)
+function check_remote_auth(plugin_conf)
   local http = require "resty.http"
   local httpc = http.new()
   
@@ -102,9 +100,12 @@ function check_remote_auth(auth_server_url)
   httpc:set_timeout(5000)  -- 5 seconds
   
   -- Make request to remote auth server
+  local auth_server_url = plugin_conf.remote_auth_server
+  local original_header_value = kong.request.get_header(plugin_conf.request_header_name)
   local res, err = httpc:request_uri(auth_server_url, {
     method = "GET",
     headers = {
+      [plugin_conf.request_header_name] = original_header_value
     }
   })
   
@@ -126,9 +127,6 @@ end
 
 -- runs in the 'header_filter_by_lua_block'
 function plugin:header_filter(plugin_conf)
-
-  -- your custom code here, for example;
-  kong.response.set_header(plugin_conf.response_header, "this is on my response")
 
 end --]]
 

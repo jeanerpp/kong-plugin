@@ -14,13 +14,9 @@ local schema = {
         -- The 'config' record is the custom part of the plugin schema
         type = "record",
         fields = {
-          -- a standard defined field (typedef), with some customizations
-          { request_header = typedefs.header_name {
-              required = true,
-              default = "Hello-World" } },
-          { response_header = typedefs.header_name {
-              required = true,
-              default = "Bye-World" } },
+          { request_header_name = { -- the request header name to be forwarded to the remote auth server
+              type = "string",
+              required = true, }},
           { ttl = { -- self defined field
               type = "integer",
               default = 600,
@@ -31,11 +27,6 @@ local schema = {
               required = true, }},
         },
         entity_checks = {
-          -- add some validation rules across fields
-          -- the following is silly because it is always true, since they are both required
-          { at_least_one_of = { "request_header", "response_header" }, },
-          -- We specify that both header-names cannot be the same
-          { distinct = { "request_header", "response_header"} },
         },
       },
     },
