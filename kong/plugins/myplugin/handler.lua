@@ -14,6 +14,9 @@
 
 local cjson = require "cjson"
 
+-- Cache version counter: incremented on config change to invalidate all cached entries
+local cache_version = 0
+
 local plugin = {
   PRIORITY = 1000, -- set the plugin priority, which determines plugin execution order
   VERSION = "0.1", -- version in X.Y.Z format. Check hybrid-mode compatibility requirements.
@@ -47,7 +50,9 @@ function plugin:configure(configs)
     return -- no configs, nothing to do
   end
 
-  -- your custom code here
+  -- Increment cache version to invalidate all cached responses
+  cache_version = cache_version + 1
+  kong.log.notice("Plugin config changed, cache version now: ", cache_version)
 
 end --]]
 
@@ -85,7 +90,7 @@ function plugin:access(plugin_conf)
   kong.log.inspect(plugin_conf)   -- check the logs for a pretty-printed config!
   
   -- Use the full request URL as cache key
-  local cache_key = "myplugin:resp:" .. ngx.var.host .. ngx.var.request_uri
+  local cache_key = "myplugin:resp:v" .. cache_version .. ":" .. ngx.var.host .. ngx.var.request_uri
   
   -- Check response cache first (shared across all workers)
   local cached_str, err = kong.cache:get(cache_key, { ttl = plugin_conf.ttl }, function()
