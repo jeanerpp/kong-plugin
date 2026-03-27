@@ -3,6 +3,10 @@ local helpers = require "spec.helpers"
 
 local PLUGIN_NAME = "myplugin"
 
+-- Resolve the auth server hostname from the pongo network
+local PONGO_NETWORK = os.getenv("PONGO_NETWORK") or "pongo-test-network"
+local AUTH_SERVER = "http://" .. PONGO_NETWORK .. "-nginx-remote-ok." .. PONGO_NETWORK
+
 
 for _, strategy in helpers.all_strategies() do if strategy ~= "cassandra" then
   describe(PLUGIN_NAME .. ": (access) [#" .. strategy .. "]", function()
@@ -21,7 +25,12 @@ for _, strategy in helpers.all_strategies() do if strategy ~= "cassandra" then
       bp.plugins:insert {
         name = PLUGIN_NAME,
         route = { id = route1.id },
-        config = {},
+        config = {
+          request_header_name = "Host",
+          remote_auth_server = AUTH_SERVER,
+          auth_header_name = "Authorization",
+          ttl = 10,
+        },
       }
 
       -- start kong
@@ -52,7 +61,7 @@ for _, strategy in helpers.all_strategies() do if strategy ~= "cassandra" then
 
 
     describe("request", function()
-      it("gets a 'hello-world' header", function()
+      it("authenticates and proxies request on cache miss", function()
         local r = client:get("/request", {
           headers = {
             host = "test1.com"
@@ -60,28 +69,33 @@ for _, strategy in helpers.all_strategies() do if strategy ~= "cassandra" then
         })
         -- validate that the request succeeded, response status 200
         assert.response(r).has.status(200)
-        -- now check the request (as echoed by the mock backend) to have the header
-        local header_value = assert.request(r).has.header("hello-world")
-        -- validate the value of that header
-        assert.equal("this is on a request", header_value)
+        -- check that the Authorization header was set on the proxied request
+        local header_value = assert.request(r).has.header("Authorization")
+        assert.matches("^Bearer ", header_value)
       end)
     end)
 
 
 
-    describe("response", function()
-      it("gets a 'bye-world' header", function()
-        local r = client:get("/request", {
+    describe("caching", function()
+      it("returns cached response on second request", function()
+        -- First request: cache miss
+        local r1 = client:get("/request", {
           headers = {
             host = "test1.com"
           }
         })
-        -- validate that the request succeeded, response status 200
-        assert.response(r).has.status(200)
-        -- now check the response to have the header
-        local header_value = assert.response(r).has.header("bye-world")
-        -- validate the value of that header
-        assert.equal("this is on the response", header_value)
+        assert.response(r1).has.status(200)
+
+        -- Second request: cache hit (should return same response)
+        local client2 = helpers.proxy_client()
+        local r2 = client2:get("/request", {
+          headers = {
+            host = "test1.com"
+          }
+        })
+        assert.response(r2).has.status(200)
+        client2:close()
       end)
     end)
 

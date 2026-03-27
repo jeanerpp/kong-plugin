@@ -14,21 +14,19 @@ local schema = {
         -- The 'config' record is the custom part of the plugin schema
         type = "record",
         fields = {
-          { request_header_name = { -- the request header name to be forwarded to the remote auth server
-              type = "string",
-              required = true, }},
+          { remote_auth_server = typedefs.url {
+            required = true } },
+          { request_header_name = typedefs.header_name {
+            required = true } },
           { ttl = { -- self defined field
               type = "integer",
               default = 10,
               required = true,
               gt = 0, }}, -- adding a constraint for the value
-          { remote_auth_server = { -- configuration for remote authentication server
-              type = "string",
-              required = true, }},
-          { auth_header_name = { -- the request head name for JWT auth token to upstream server
-              type = "string",
-              default = "Authorization",
-              required = true, }},
+          { auth_header_name = typedefs.header_name {
+            -- the request head name for JWT auth token to upstream server
+            default = "Authorization",
+            required = true } },
         },
         entity_checks = {
         },
