@@ -19,6 +19,7 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         request_uri = "/test",
       },
       arg = { nil, nil },
+      now = function() return 1640995200 end,  -- Fixed timestamp for testing
     }
 
     -- Mock kong global
@@ -41,6 +42,9 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         end,
         safe_set = function(self, key, val, ttl)
           cache_store[key] = val
+        end,
+        invalidate = function(self, key)
+          cache_store[key] = nil
         end,
       },
       ctx = {
@@ -131,7 +135,7 @@ describe(PLUGIN_NAME .. ": (unit)", function()
     end)
 
 
-    it("returns cached response on cache hit", function()
+    it("returns cached response on cache hit (not expired)", function()
       local cjson = require "cjson"
       local config = {
         request_header_name = "X-My-Header",
@@ -140,12 +144,13 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         ttl = 10,
       }
 
-      -- Pre-populate the cache
+      -- Pre-populate the cache with expires_at in the future
       local cache_key = "myplugin:resp:v0:test.example.com/test"
       cache_store[cache_key] = cjson.encode({
         status = 200,
         body = "cached body",
         headers = { ["content-type"] = "text/plain" },
+        expires_at = ngx.now() + 10,  -- 10 seconds in the future
       })
 
       plugin:access(config)
@@ -156,6 +161,63 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
       -- Should NOT have called remote auth (no set_header call)
       assert.is_nil(set_header_name)
+    end)
+
+
+    it("invalidates cache when entry has expired", function()
+      local cjson = require "cjson"
+      local config = {
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
+        auth_header_name = "Authorization",
+        ttl = 10,
+      }
+
+      -- Pre-populate the cache with expires_at in the past
+      local cache_key = "myplugin:resp:v0:test.example.com/test"
+      cache_store[cache_key] = cjson.encode({
+        status = 200,
+        body = "stale body",
+        headers = { ["content-type"] = "text/plain" },
+        expires_at = ngx.now() - 1,  -- 1 second in the past
+      })
+
+      plugin:access(config)
+
+      -- Should have invalidated the expired cache entry
+      assert.is_nil(cache_store[cache_key])
+
+      -- Should NOT return cached response, instead calls remote auth
+      assert.equal("Authorization", set_header_name)
+      assert.equal("Bearer mock-jwt-token", set_header_value)
+    end)
+
+
+    it("invalidates cache when expires_at is missing", function()
+      local cjson = require "cjson"
+      local config = {
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
+        auth_header_name = "Authorization",
+        ttl = 10,
+      }
+
+      -- Pre-populate the cache without expires_at
+      local cache_key = "myplugin:resp:v0:test.example.com/test"
+      cache_store[cache_key] = cjson.encode({
+        status = 200,
+        body = "old cached body",
+        headers = { ["content-type"] = "text/plain" },
+      })
+
+      plugin:access(config)
+
+      -- Missing expires_at is treated as expired, should invalidate
+      assert.is_nil(cache_store[cache_key])
+
+      -- Should fall through to remote auth
+      assert.equal("Authorization", set_header_name)
+      assert.equal("Bearer mock-jwt-token", set_header_value)
     end)
 
 

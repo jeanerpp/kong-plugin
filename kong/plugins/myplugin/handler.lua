@@ -99,13 +99,19 @@ function plugin:access(plugin_conf)
   
   if cached_str then
     local cached = cjson.decode(cached_str)
-    kong.log.info("Response cache hit for: ", cache_key)
-    -- Remove headers that Kong should recompute for this response
-    local headers = cached.headers or {}
-    headers["content-length"] = nil
-    headers["transfer-encoding"] = nil
-    headers["connection"] = nil
-    return kong.response.exit(cached.status, cached.body, headers)
+    -- Manual TTL check: expire if past the stored deadline
+    if not cached.expires_at or ngx.now() >= cached.expires_at then
+      kong.log.info("Response cache expired for: ", cache_key)
+      kong.cache:invalidate(cache_key)
+    else
+      kong.log.info("Response cache hit for: ", cache_key)
+      -- Remove headers that Kong should recompute for this response
+      local headers = cached.headers or {}
+      headers["content-length"] = nil
+      headers["transfer-encoding"] = nil
+      headers["connection"] = nil
+      return kong.response.exit(cached.status, cached.body, headers)
+    end
   end
   
   kong.log.info("Response cache miss for: ", cache_key)
@@ -187,6 +193,7 @@ function plugin:header_filter(plugin_conf)
         status = status,
         body = "",
         headers = headers,
+        expires_at = ngx.now() + ttl,
       })
       kong.cache:safe_set(cache_key, cache_value, ttl)
       kong.log.info("Cached HEAD response for: ", cache_key, " status: ", status, " ttl: ", ttl)
@@ -223,6 +230,7 @@ function plugin:body_filter(plugin_conf)
         status = status,
         body = full_body,
         headers = headers,
+        expires_at = ngx.now() + ttl,
       })
       kong.cache:safe_set(cache_key, cache_value, ttl)
       kong.log.info("Cached response for: ", cache_key, " status: ", status, " ttl: ", ttl)
