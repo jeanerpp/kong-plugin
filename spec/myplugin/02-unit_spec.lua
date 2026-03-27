@@ -279,7 +279,7 @@ describe(PLUGIN_NAME .. ": (unit)", function()
       plugin:body_filter(config)
       assert.equal(1, #kong.ctx.plugin.body_chunks)
 
-      -- Should not have cached the full response
+      -- Should not have cached any partial response
       local cached = cache_store["myplugin:resp:v0:test.example.com/test"]
       assert.is_nil(cached)
 
