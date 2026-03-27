@@ -12,6 +12,8 @@
 
 
 
+local cjson = require "cjson"
+
 local plugin = {
   PRIORITY = 1000, -- set the plugin priority, which determines plugin execution order
   VERSION = "0.1", -- version in X.Y.Z format. Check hybrid-mode compatibility requirements.
@@ -82,6 +84,27 @@ function plugin:access(plugin_conf)
   -- your custom code here
   kong.log.inspect(plugin_conf)   -- check the logs for a pretty-printed config!
   
+  -- Use the full request URL as cache key
+  local cache_key = "myplugin:resp:" .. ngx.var.host .. ngx.var.request_uri
+  
+  -- Check response cache first (shared across all workers)
+  local cached_str, err = kong.cache:get(cache_key, { ttl = plugin_conf.ttl }, function()
+    return nil  -- cache miss, return nil to skip caching for now
+  end)
+  
+  if cached_str then
+    local cached = cjson.decode(cached_str)
+    kong.log.info("Response cache hit for: ", cache_key)
+    -- Remove headers that Kong should recompute for this response
+    local headers = cached.headers or {}
+    headers["content-length"] = nil
+    headers["transfer-encoding"] = nil
+    headers["connection"] = nil
+    return kong.response.exit(cached.status, cached.body, headers)
+  end
+  
+  kong.log.info("Response cache miss for: ", cache_key)
+  
   -- Call remote authentication server
   local auth_token = check_remote_auth(plugin_conf)
   
@@ -90,6 +113,10 @@ function plugin:access(plugin_conf)
   end
 
   kong.service.request.set_header(plugin_conf.auth_header_name, "Bearer " .. auth_token)
+
+  -- Store cache key and TTL in context for later phases
+  kong.ctx.plugin.cache_key = cache_key
+  kong.ctx.plugin.cache_ttl = plugin_conf.ttl
   
 end --]]
 
@@ -135,16 +162,67 @@ end
 
 -- runs in the 'header_filter_by_lua_block'
 function plugin:header_filter(plugin_conf)
+  -- Capture response headers for caching
+  if kong.ctx.plugin.cache_key then
+    local headers = kong.response.get_headers()
+    local status = kong.response.get_status()
+    -- Remove hop-by-hop headers that should not be cached
+    headers["content-length"] = nil
+    headers["transfer-encoding"] = nil
+    headers["connection"] = nil
+    kong.ctx.plugin.response_headers = headers
+    kong.ctx.plugin.response_status = status
 
+    -- HEAD requests have no body, so body_filter won't be called.
+    -- Cache immediately with an empty body.
+    if kong.request.get_method() == "HEAD" then
+      local cache_key = kong.ctx.plugin.cache_key
+      local ttl = kong.ctx.plugin.cache_ttl
+      local cache_value = cjson.encode({
+        status = status,
+        body = "",
+        headers = headers,
+      })
+      kong.cache:safe_set(cache_key, cache_value, ttl)
+      kong.log.info("Cached HEAD response for: ", cache_key, " status: ", status, " ttl: ", ttl)
+      kong.ctx.plugin.cache_key = nil  -- prevent body_filter from caching again
+    end
+  end
 end --]]
 
 
---[[ runs in the 'body_filter_by_lua_block'
+-- runs in the 'body_filter_by_lua_block'
 function plugin:body_filter(plugin_conf)
-
-  -- your custom code here
-  kong.log.debug("saying hi from the 'body_filter' handler")
-
+  -- Accumulate response body chunks for caching
+  if kong.ctx.plugin.cache_key then
+    local chunk = ngx.arg[1]
+    local eof = ngx.arg[2]
+    kong.log.info("Body filter chunk: ", chunk and #chunk or "nil", " eof: ", eof)
+    
+    local body_chunks = kong.ctx.plugin.body_chunks or {}
+    if chunk and chunk ~= "" then
+      table.insert(body_chunks, chunk)
+    end
+    kong.ctx.plugin.body_chunks = body_chunks
+    
+    if eof then
+      kong.log.info("Body filter EOF reached")
+      local full_body = table.concat(body_chunks)
+      local cache_key = kong.ctx.plugin.cache_key
+      local ttl = kong.ctx.plugin.cache_ttl
+      local status = kong.ctx.plugin.response_status
+      local headers = kong.ctx.plugin.response_headers
+      
+      -- Cache the full response (shared across all workers)
+      local cache_value = cjson.encode({
+        status = status,
+        body = full_body,
+        headers = headers,
+      })
+      kong.cache:safe_set(cache_key, cache_value, ttl)
+      kong.log.info("Cached response for: ", cache_key, " status: ", status, " ttl: ", ttl)
+    end
+  end
 end --]]
 
 
