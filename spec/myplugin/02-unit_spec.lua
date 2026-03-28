@@ -37,8 +37,11 @@ describe(PLUGIN_NAME .. ": (unit)", function()
           if cache_store[key] then
             return cache_store[key], nil
           end
-          local val = cb()
-          return val, nil
+          if cb then
+            local val = cb()
+            return val, nil
+          end
+          return nil, nil
         end,
         safe_set = function(self, key, val, ttl)
           cache_store[key] = val

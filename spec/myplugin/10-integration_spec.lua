@@ -19,7 +19,7 @@ for _, strategy in helpers.all_strategies() do if strategy ~= "cassandra" then
       -- Inject a test route. No need to create a service, there is a default
       -- service which will echo the request.
       local route1 = bp.routes:insert({
-        hosts = { "test1.com" },
+        hosts = { "test1.com", "test2.com" },
       })
       -- add the plugin to test to the route we created
       bp.plugins:insert {
@@ -82,20 +82,24 @@ for _, strategy in helpers.all_strategies() do if strategy ~= "cassandra" then
         -- First request: cache miss
         local r1 = client:get("/request", {
           headers = {
-            host = "test1.com"
+            host = "test2.com"
           }
         })
         assert.response(r1).has.status(200)
+        -- check that the X-Cache-Status response header is not set (cache miss)
+        assert.response(r1).has.no.header("X-Cache-Status")
 
         -- Second request: cache hit (should return same response)
-        local client2 = helpers.proxy_client()
-        local r2 = client2:get("/request", {
+        local r2 = client:get("/request", {
           headers = {
-            host = "test1.com"
+            host = "test2.com"
           }
         })
         assert.response(r2).has.status(200)
-        client2:close()
+        -- check that the X-Cache-Status response header is set (cache hit)
+        local cache_status = assert.response(r2).has.header("X-Cache-Status")
+        assert.equal("HIT", cache_status)
+
       end)
     end)
 

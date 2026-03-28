@@ -93,9 +93,7 @@ function plugin:access(plugin_conf)
   local cache_key = "myplugin:resp:v" .. cache_version .. ":" .. ngx.var.host .. ngx.var.request_uri
   
   -- Check response cache first (shared across all workers)
-  local cached_str, err = kong.cache:get(cache_key, { ttl = plugin_conf.ttl }, function()
-    return nil  -- cache miss, return nil to skip caching for now
-  end)
+  local cached_str, err = kong.cache:get(cache_key)
   
   if cached_str then
     local cached = cjson.decode(cached_str)
@@ -110,6 +108,7 @@ function plugin:access(plugin_conf)
       headers["content-length"] = nil
       headers["transfer-encoding"] = nil
       headers["connection"] = nil
+      headers["X-Cache-Status"] = "HIT"
       return kong.response.exit(cached.status, cached.body, headers)
     end
   end
