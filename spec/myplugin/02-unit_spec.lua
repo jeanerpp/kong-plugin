@@ -17,6 +17,7 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         scheme = "http",
         host = "test.example.com",
         request_uri = "/test",
+        request_method = "GET",
       },
       arg = { nil, nil },
       now = function() return 1640995200 end,  -- Fixed timestamp for testing

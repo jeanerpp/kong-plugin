@@ -89,6 +89,20 @@ function plugin:access(plugin_conf)
   -- your custom code here
   kong.log.inspect(plugin_conf)   -- check the logs for a pretty-printed config!
   
+  -- Only cache GET and HEAD requests
+  if ngx.var.request_method ~= "GET" and ngx.var.request_method ~= "HEAD" then
+    kong.log.info("Skipping cache for ", ngx.var.request_method, " request")
+    -- Call remote authentication server for non-cacheable requests
+    local auth_token = check_remote_auth(plugin_conf)
+    
+    if not auth_token then
+      return kong.response.exit(401, "Authentication failed")
+    end
+    
+    kong.service.request.set_header(plugin_conf.auth_header_name, "Bearer " .. auth_token)
+    return
+  end
+  
   -- Use the full request URL as cache key
   local cache_key = "myplugin:resp:v" .. cache_version .. ":" .. ngx.var.host .. ngx.var.request_uri
   
