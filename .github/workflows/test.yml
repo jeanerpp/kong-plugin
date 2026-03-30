@@ -40,4 +40,19 @@ jobs:
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         cd quiz-kong-plugin
-        pongo run -- --Xoutput "--color" --coverage
+        pongo run --coverage
+
+    - name: Check coverage report
+      run: |
+        cd quiz-kong-plugin
+        total_cov=$(grep -w '^Total' luacov.report.out | tail -1 | gawk '{print $NF;}')
+        echo "Total coverage rate: $total_cov"
+        
+        # Remove % and compare numerically using bc
+        cov_num=${total_cov%\%}
+        if (( $(echo "$cov_num > 90.0" | bc -l) )); then
+          echo "Coverage is greater than 90%"
+        else
+          echo "Coverage is less than or equal to 90%"
+          exit 1
+        fi
