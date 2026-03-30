@@ -20,12 +20,12 @@ jobs:
 
     steps:
     - name: Checkout kong plugin repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         path: quiz-kong-plugin
 
     - name: Checkout kong pongo repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: jeanerpp/kong-pongo
         ref: br_demo
