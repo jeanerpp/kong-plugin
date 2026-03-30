@@ -19,24 +19,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout plugin repo
+    - name: Checkout kong plugin repo
       uses: actions/checkout@v4
       with:
         path: quiz-kong-plugin
 
-    - name: Checkout pongo repo
+    - name: Checkout kong pongo repo
       uses: actions/checkout@v4
       with:
         repository: jeanerpp/kong-pongo
         ref: br_demo
         path: kong-pongo
 
-    - name: Setup pongo
+    - name: Setup kong pongo
       run: |
         mkdir -p ~/.local/bin
         ln -s $(realpath kong-pongo/pongo.sh) ~/.local/bin/pongo
 
-    - name: Run tests with custom pongo
+    - name: Run tests with custom kong pongo
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         cd quiz-kong-plugin
