@@ -1,4 +1,4 @@
--- unit tests for myplugin with GET request method
+-- unit tests for myplugin with HEAD request method
 
 local PLUGIN_NAME = "myplugin"
 
@@ -18,7 +18,7 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         scheme = "http",
         host = "test.example.com",
         request_uri = "/test",
-        request_method = "GET",
+        request_method = "HEAD",
       },
       arg = { nil, nil },
       now = function() return 1640995200 end,  -- Fixed timestamp for testing
@@ -60,7 +60,7 @@ describe(PLUGIN_NAME .. ": (unit)", function()
           return "test-header-value"
         end,
         get_method = function()
-          return "GET"
+          return "HEAD"
         end,
       },
       response = {
