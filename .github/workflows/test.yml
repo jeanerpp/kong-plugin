@@ -50,7 +50,7 @@ jobs:
         
         # Remove % and compare numerically using bc
         cov_num=${total_cov%\%}
-        if (( $(echo "$cov_num > 100.0" | bc -l) )); then
+        if (( $(echo "$cov_num >= 100.0" | bc -l) )); then
           echo "Coverage is 100%"
         else
           echo "Coverage is less than 100%"
