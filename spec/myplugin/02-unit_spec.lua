@@ -285,6 +285,85 @@ describe(PLUGIN_NAME .. ": (unit)", function()
   end)
 
 
+  describe("configure phase", function()
+
+    before_each(function()
+      -- Restore the successful resty.http mock (earlier tests may override it)
+      package.loaded["resty.http"] = {
+        new = function()
+          return {
+            set_timeout = function() end,
+            request_uri = function(self, url, opts)
+              return {
+                status = 200,
+                body = '{"token":"mock-jwt-token"}',
+              }, nil
+            end,
+          }
+        end,
+      }
+      -- Reload plugin to pick up restored mock and reset module state
+      package.loaded["kong.plugins." .. PLUGIN_NAME .. ".handler"] = nil
+      plugin = require("kong.plugins." .. PLUGIN_NAME .. ".handler")
+    end)
+
+    it("increments cache version when configs are provided", function()
+      local config = {
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
+        auth_header_name = "Authorization",
+        ttl = 10,
+      }
+
+      plugin:access(config)
+      local cache_key_before = kong.ctx.plugin.cache_key
+
+      -- Simulate a config change
+      plugin:configure({ config })
+
+      -- Reset context for next request
+      ctx_plugin = {}
+      kong.ctx.plugin = ctx_plugin
+
+      plugin:access(config)
+      local cache_key_after = kong.ctx.plugin.cache_key
+
+      -- Cache key should differ because cache_version was incremented
+      assert.is_not_nil(cache_key_before)
+      assert.is_not_nil(cache_key_after)
+      assert.are_not.equal(cache_key_before, cache_key_after)
+    end)
+
+    it("does nothing when configs is nil", function()
+      local config = {
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
+        auth_header_name = "Authorization",
+        ttl = 10,
+      }
+
+      plugin:access(config)
+      local cache_key_before = kong.ctx.plugin.cache_key
+
+      -- Simulate removal of all plugin configs
+      plugin:configure(nil)
+
+      -- Reset context for next request
+      ctx_plugin = {}
+      kong.ctx.plugin = ctx_plugin
+
+      plugin:access(config)
+      local cache_key_after = kong.ctx.plugin.cache_key
+
+      -- Cache key should be the same because nil configs should not increment version
+      assert.is_not_nil(cache_key_before)
+      assert.is_not_nil(cache_key_after)
+      assert.equal(cache_key_before, cache_key_after)
+    end)
+
+  end)
+
+
   describe("header_filter phase", function()
 
     it("captures response headers and status when cache_key is set", function()

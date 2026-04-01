@@ -35,7 +35,7 @@ local plugin = {
 function plugin:init_worker()
 
   -- your custom code here
-  kong.log.debug("saying hi from the 'init_worker' handler")
+  -- kong.log.debug("saying hi from the 'init_worker' handler")
 
 end --]]
 
