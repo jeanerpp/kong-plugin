@@ -74,7 +74,7 @@ function plugin:access(plugin_conf)
 
   if cached_str then
     local cached = cjson.decode(cached_str)
-    -- Manual TTL check: expire if past the stored deadline
+    -- Kong cache with "memory" strategy need manual TTL check: expire if past the stored deadline
     if not cached.expires_at or ngx.now() >= cached.expires_at then
       kong.log.info("Response cache expired for: ", cache_key)
       kong.cache:invalidate(cache_key)
