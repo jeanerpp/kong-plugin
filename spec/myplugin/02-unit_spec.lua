@@ -1,9 +1,11 @@
--- unit tests for myplugin with GET request method
+-- unit tests for myplugin with GET and HEAD request methods
 
 local PLUGIN_NAME = "myplugin"
 
 
-describe(PLUGIN_NAME .. ": (unit)", function()
+for _, method in ipairs({"GET", "HEAD"}) do
+
+describe(PLUGIN_NAME .. ": (unit) [" .. method .. "]", function()
 
   local plugin
   local exit_status, exit_body, exit_headers
@@ -12,19 +14,17 @@ describe(PLUGIN_NAME .. ": (unit)", function()
   local ctx_plugin = {}
 
   setup(function()
-    -- Mock ngx global
     _G.ngx = {
       var = {
         scheme = "http",
         host = "test.example.com",
         request_uri = "/test",
-        request_method = "GET",
+        request_method = method,
       },
       arg = { nil, nil },
-      now = function() return 1640995200 end,  -- Fixed timestamp for testing
+      now = function() return 1640995200 end,
     }
 
-    -- Mock kong global
     _G.kong = {
       log = {
         inspect = function() end,
@@ -60,7 +60,7 @@ describe(PLUGIN_NAME .. ": (unit)", function()
           return "test-header-value"
         end,
         get_method = function()
-          return "GET"
+          return method
         end,
       },
       response = {
@@ -86,7 +86,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
       },
     }
 
-    -- Mock resty.http for check_remote_auth
     package.loaded["resty.http"] = {
       new = function()
         return {
@@ -101,7 +100,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
       end,
     }
 
-    -- Load the plugin
     plugin = require("kong.plugins." .. PLUGIN_NAME .. ".handler")
   end)
 
@@ -130,11 +128,8 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
       plugin:access(config)
 
-      -- Should have set the auth header on the upstream request
       assert.equal("Authorization", set_header_name)
       assert.equal("Bearer mock-jwt-token", set_header_value)
-
-      -- Should have stored cache_key in context for later phases
       assert.is_not_nil(kong.ctx.plugin.cache_key)
       assert.equal(10, kong.ctx.plugin.cache_ttl)
     end)
@@ -149,22 +144,18 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         ttl = 10,
       }
 
-      -- Pre-populate the cache with expires_at in the future
       local cache_key = "myplugin:resp:v0:test.example.com/test"
       cache_store[cache_key] = cjson.encode({
         status = 200,
         body = "cached body",
         headers = { ["content-type"] = "text/plain" },
-        expires_at = ngx.now() + 10,  -- 10 seconds in the future
+        expires_at = ngx.now() + 10,
       })
 
       plugin:access(config)
 
-      -- Should return cached response via kong.response.exit
       assert.equal(200, exit_status)
       assert.equal("cached body", exit_body)
-
-      -- Should NOT have called remote auth (no set_header call)
       assert.is_nil(set_header_name)
     end)
 
@@ -178,21 +169,17 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         ttl = 10,
       }
 
-      -- Pre-populate the cache with expires_at in the past
       local cache_key = "myplugin:resp:v0:test.example.com/test"
       cache_store[cache_key] = cjson.encode({
         status = 200,
         body = "stale body",
         headers = { ["content-type"] = "text/plain" },
-        expires_at = ngx.now() - 1,  -- 1 second in the past
+        expires_at = ngx.now() - 1,
       })
 
       plugin:access(config)
 
-      -- Should have invalidated the expired cache entry
       assert.is_nil(cache_store[cache_key])
-
-      -- Should NOT return cached response, instead calls remote auth
       assert.equal("Authorization", set_header_name)
       assert.equal("Bearer mock-jwt-token", set_header_value)
     end)
@@ -207,7 +194,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         ttl = 10,
       }
 
-      -- Pre-populate the cache without expires_at
       local cache_key = "myplugin:resp:v0:test.example.com/test"
       cache_store[cache_key] = cjson.encode({
         status = 200,
@@ -217,17 +203,13 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
       plugin:access(config)
 
-      -- Missing expires_at is treated as expired, should invalidate
       assert.is_nil(cache_store[cache_key])
-
-      -- Should fall through to remote auth
       assert.equal("Authorization", set_header_name)
       assert.equal("Bearer mock-jwt-token", set_header_value)
     end)
 
 
     it("returns 401 when auth fails", function()
-      -- Override resty.http mock to return 401
       package.loaded["resty.http"] = {
         new = function()
           return {
@@ -238,8 +220,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
           }
         end,
       }
-      -- Force re-require of handler to pick up new mock
-      -- Instead, we directly test check_remote_auth behavior via access
       local config = {
         request_header_name = "X-My-Header",
         remote_auth_server = "http://auth-server:80",
@@ -255,7 +235,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
 
     it("returns 401 when auth server has no reply", function()
-      -- Override resty.http mock to return nil (connection error / timeout)
       package.loaded["resty.http"] = {
         new = function()
           return {
@@ -278,90 +257,82 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
       assert.equal(401, exit_status)
       assert.equal("Authentication failed", exit_body)
-      -- Should NOT have set any auth header
       assert.is_nil(set_header_name)
     end)
 
   end)
 
 
-  describe("configure phase", function()
+  -- configure phase tests only need to run once (not method-specific)
+  if method == "GET" then
+    describe("configure phase", function()
 
-    before_each(function()
-      -- Restore the successful resty.http mock (earlier tests may override it)
-      package.loaded["resty.http"] = {
-        new = function()
-          return {
-            set_timeout = function() end,
-            request_uri = function(self, url, opts)
-              return {
-                status = 200,
-                body = '{"token":"mock-jwt-token"}',
-              }, nil
-            end,
-          }
-        end,
-      }
-      -- Reload plugin to pick up restored mock and reset module state
-      package.loaded["kong.plugins." .. PLUGIN_NAME .. ".handler"] = nil
-      plugin = require("kong.plugins." .. PLUGIN_NAME .. ".handler")
+      before_each(function()
+        package.loaded["resty.http"] = {
+          new = function()
+            return {
+              set_timeout = function() end,
+              request_uri = function(self, url, opts)
+                return {
+                  status = 200,
+                  body = '{"token":"mock-jwt-token"}',
+                }, nil
+              end,
+            }
+          end,
+        }
+        package.loaded["kong.plugins." .. PLUGIN_NAME .. ".handler"] = nil
+        plugin = require("kong.plugins." .. PLUGIN_NAME .. ".handler")
+      end)
+
+      it("increments cache version when configs are provided", function()
+        local config = {
+          request_header_name = "X-My-Header",
+          remote_auth_server = "http://auth-server:80",
+          auth_header_name = "Authorization",
+          ttl = 10,
+        }
+
+        plugin:access(config)
+        local cache_key_before = kong.ctx.plugin.cache_key
+
+        plugin:configure({ config })
+        ctx_plugin = {}
+        kong.ctx.plugin = ctx_plugin
+
+        plugin:access(config)
+        local cache_key_after = kong.ctx.plugin.cache_key
+
+        assert.is_not_nil(cache_key_before)
+        assert.is_not_nil(cache_key_after)
+        assert.are_not.equal(cache_key_before, cache_key_after)
+      end)
+
+      it("does nothing when configs is nil", function()
+        local config = {
+          request_header_name = "X-My-Header",
+          remote_auth_server = "http://auth-server:80",
+          auth_header_name = "Authorization",
+          ttl = 10,
+        }
+
+        plugin:access(config)
+        local cache_key_before = kong.ctx.plugin.cache_key
+
+        plugin:configure(nil)
+        ctx_plugin = {}
+        kong.ctx.plugin = ctx_plugin
+
+        plugin:access(config)
+        local cache_key_after = kong.ctx.plugin.cache_key
+
+        assert.is_not_nil(cache_key_before)
+        assert.is_not_nil(cache_key_after)
+        assert.equal(cache_key_before, cache_key_after)
+      end)
+
     end)
-
-    it("increments cache version when configs are provided", function()
-      local config = {
-        request_header_name = "X-My-Header",
-        remote_auth_server = "http://auth-server:80",
-        auth_header_name = "Authorization",
-        ttl = 10,
-      }
-
-      plugin:access(config)
-      local cache_key_before = kong.ctx.plugin.cache_key
-
-      -- Simulate a config change
-      plugin:configure({ config })
-
-      -- Reset context for next request
-      ctx_plugin = {}
-      kong.ctx.plugin = ctx_plugin
-
-      plugin:access(config)
-      local cache_key_after = kong.ctx.plugin.cache_key
-
-      -- Cache key should differ because cache_version was incremented
-      assert.is_not_nil(cache_key_before)
-      assert.is_not_nil(cache_key_after)
-      assert.are_not.equal(cache_key_before, cache_key_after)
-    end)
-
-    it("does nothing when configs is nil", function()
-      local config = {
-        request_header_name = "X-My-Header",
-        remote_auth_server = "http://auth-server:80",
-        auth_header_name = "Authorization",
-        ttl = 10,
-      }
-
-      plugin:access(config)
-      local cache_key_before = kong.ctx.plugin.cache_key
-
-      -- Simulate removal of all plugin configs
-      plugin:configure(nil)
-
-      -- Reset context for next request
-      ctx_plugin = {}
-      kong.ctx.plugin = ctx_plugin
-
-      plugin:access(config)
-      local cache_key_after = kong.ctx.plugin.cache_key
-
-      -- Cache key should be the same because nil configs should not increment version
-      assert.is_not_nil(cache_key_before)
-      assert.is_not_nil(cache_key_after)
-      assert.equal(cache_key_before, cache_key_after)
-    end)
-
-  end)
+  end
 
 
   describe("header_filter phase", function()
@@ -381,7 +352,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
       assert.is_not_nil(kong.ctx.plugin.response_headers)
       assert.equal(200, kong.ctx.plugin.response_status)
-      -- hop-by-hop headers should be removed
       assert.is_nil(kong.ctx.plugin.response_headers["content-length"])
       assert.is_nil(kong.ctx.plugin.response_headers["transfer-encoding"])
       assert.is_nil(kong.ctx.plugin.response_headers["connection"])
@@ -420,20 +390,16 @@ describe(PLUGIN_NAME .. ": (unit)", function()
         ttl = 10,
       }
 
-      -- Simulate first chunk (not EOF)
       ngx.arg = { "Hello ", false }
       plugin:body_filter(config)
       assert.equal(1, #kong.ctx.plugin.body_chunks)
 
-      -- Should not have cached any partial response
       local cached = cache_store["myplugin:resp:v0:test.example.com/test"]
       assert.is_nil(cached)
 
-      -- Simulate second chunk with EOF
       ngx.arg = { "World", true }
       plugin:body_filter(config)
 
-      -- Should have cached the full response
       cached = cache_store["myplugin:resp:v0:test.example.com/test"]
       assert.is_not_nil(cached)
 
@@ -455,10 +421,11 @@ describe(PLUGIN_NAME .. ": (unit)", function()
       ngx.arg = { "some data", true }
       plugin:body_filter(config)
 
-      -- Nothing should be cached
       assert.is_same({}, cache_store)
     end)
 
   end)
 
 end)
+
+end -- for method
