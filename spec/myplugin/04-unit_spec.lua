@@ -1,9 +1,11 @@
--- unit tests for myplugin with non GET/HEAD request method
+-- unit tests for myplugin with non-cacheable request methods
 
 local PLUGIN_NAME = "myplugin"
 
 
-describe(PLUGIN_NAME .. ": (unit)", function()
+for _, method in ipairs({"POST", "PUT", "PATCH", "DELETE"}) do
+
+describe(PLUGIN_NAME .. ": (unit) [" .. method .. "]", function()
 
   local plugin
   local exit_status, exit_body, exit_headers
@@ -12,19 +14,17 @@ describe(PLUGIN_NAME .. ": (unit)", function()
   local ctx_plugin = {}
 
   setup(function()
-    -- Mock ngx global
     _G.ngx = {
       var = {
         scheme = "http",
         host = "test.example.com",
         request_uri = "/test",
-        request_method = "POST",
+        request_method = method,
       },
       arg = { nil, nil },
-      now = function() return 1640995200 end,  -- Fixed timestamp for testing
+      now = function() return 1640995200 end,
     }
 
-    -- Mock kong global
     _G.kong = {
       log = {
         inspect = function() end,
@@ -60,7 +60,7 @@ describe(PLUGIN_NAME .. ": (unit)", function()
           return "test-header-value"
         end,
         get_method = function()
-          return "POST"
+          return method
         end,
       },
       response = {
@@ -86,7 +86,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
       },
     }
 
-    -- Mock resty.http for check_remote_auth
     package.loaded["resty.http"] = {
       new = function()
         return {
@@ -101,7 +100,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
       end,
     }
 
-    -- Load the plugin
     plugin = require("kong.plugins." .. PLUGIN_NAME .. ".handler")
   end)
 
@@ -130,17 +128,13 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
       plugin:access(config)
 
-      -- Should have set the auth header on the upstream request
       assert.equal("Authorization", set_header_name)
       assert.equal("Bearer mock-jwt-token", set_header_value)
-
-      -- Should not have stored cache_key in context for later phases
       assert.is_nil(kong.ctx.plugin.cache_key)
     end)
 
 
     it("returns 401 when auth fails", function()
-      -- Override resty.http mock to return 401
       package.loaded["resty.http"] = {
         new = function()
           return {
@@ -151,8 +145,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
           }
         end,
       }
-      -- Force re-require of handler to pick up new mock
-      -- Instead, we directly test check_remote_auth behavior via access
       local config = {
         request_header_name = "X-My-Header",
         remote_auth_server = "http://auth-server:80",
@@ -168,7 +160,6 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
 
     it("returns 401 when auth server has no reply", function()
-      -- Override resty.http mock to return nil (connection error / timeout)
       package.loaded["resty.http"] = {
         new = function()
           return {
@@ -191,10 +182,11 @@ describe(PLUGIN_NAME .. ": (unit)", function()
 
       assert.equal(401, exit_status)
       assert.equal("Authentication failed", exit_body)
-      -- Should NOT have set any auth header
       assert.is_nil(set_header_name)
     end)
 
   end)
 
 end)
+
+end -- for method
