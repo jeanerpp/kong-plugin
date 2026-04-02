@@ -155,6 +155,7 @@ describe(PLUGIN_NAME .. ": (unit) [" .. method .. "]", function()
       plugin:access(config)
 
       assert.equal(401, exit_status)
+      assert.is_nil(exit_headers)
       assert.equal("Authentication failed", exit_body)
     end)
 
@@ -181,6 +182,7 @@ describe(PLUGIN_NAME .. ": (unit) [" .. method .. "]", function()
       plugin:access(config)
 
       assert.equal(401, exit_status)
+      assert.is_nil(exit_headers)
       assert.equal("Authentication failed", exit_body)
       assert.is_nil(set_header_name)
     end)

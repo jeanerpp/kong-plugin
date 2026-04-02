@@ -70,7 +70,7 @@ function plugin:access(plugin_conf)
   end
 
   local cache_key = "myplugin:resp:v" .. cache_version .. ":" .. ngx.var.host .. ngx.var.request_uri
-  local cached_str, err = kong.cache:get(cache_key)
+  local cached_str, _ = kong.cache:get(cache_key)
 
   if cached_str then
     local cached = cjson.decode(cached_str)
