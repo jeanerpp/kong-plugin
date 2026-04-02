@@ -15,30 +15,80 @@ end
 describe(PLUGIN_NAME .. ": (schema)", function()
 
 
-  it("accepts distinct request_header and response_header", function()
+  it("accepts valid config with all required fields", function()
     local ok, err = validate({
-        request_header = "My-Request-Header",
-        response_header = "Your-Response",
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
       })
     assert.is_nil(err)
     assert.is_truthy(ok)
   end)
 
 
-  it("does not accept identical request_header and response_header", function()
+  it("rejects config missing request_header_name", function()
     local ok, err = validate({
-        request_header = "they-are-the-same",
-        response_header = "they-are-the-same",
+        remote_auth_server = "http://auth-server:80",
       })
-
-    assert.is_same({
-      ["config"] = {
-        ["@entity"] = {
-          [1] = "values of these fields must be distinct: 'request_header', 'response_header'"
-        }
-      }
-    }, err)
     assert.is_falsy(ok)
+    assert.not_nil(err)
+    assert.not_nil(err.config.request_header_name)
+  end)
+
+
+  it("rejects config missing remote_auth_server", function()
+    local ok, err = validate({
+        request_header_name = "X-My-Header",
+      })
+    assert.is_falsy(ok)
+    assert.not_nil(err)
+    assert.not_nil(err.config.remote_auth_server)
+  end)
+
+
+  it("uses default ttl of 10", function()
+    local ok, err = validate({
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
+      })
+    assert.is_nil(err)
+    assert.is_truthy(ok)
+    assert.equal(10, ok.config.ttl)
+  end)
+
+
+  it("uses default auth_header_name of Authorization", function()
+    local ok, err = validate({
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
+      })
+    assert.is_nil(err)
+    assert.is_truthy(ok)
+    assert.equal("Authorization", ok.config.auth_header_name)
+  end)
+
+
+  it("rejects ttl less than or equal to 0", function()
+    local ok, err = validate({
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
+        ttl = 0,
+      })
+    assert.is_falsy(ok)
+    assert.not_nil(err)
+  end)
+
+
+  it("accepts custom ttl and auth_header_name", function()
+    local ok, err = validate({
+        request_header_name = "X-My-Header",
+        remote_auth_server = "http://auth-server:80",
+        ttl = 300,
+        auth_header_name = "X-Auth-Token",
+      })
+    assert.is_nil(err)
+    assert.is_truthy(ok)
+    assert.equal(300, ok.config.ttl)
+    assert.equal("X-Auth-Token", ok.config.auth_header_name)
   end)
 
 
